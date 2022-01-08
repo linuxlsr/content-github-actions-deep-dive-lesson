@@ -77,7 +77,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
       - name: update function code
-        run: | aws lambda update-function-code \
+        run: |
+          aws lambda update-function-code \
           --function-name my-function \
           --s3-bucket ${{ secrets.S3_BUCKET }} \
           --s3-key ${{ github.sha }}.zip \
