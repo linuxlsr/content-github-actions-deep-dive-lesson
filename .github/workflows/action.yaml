@@ -7,8 +7,26 @@ on:
       - main
 
 jobs:
+  lint:
+    runs-on: ubuntu-lastest
+    steps:
+      - name: checks out code
+        uses: actions/checkout/@v2
+      - name: set up python
+        uses: actions/setup-python@v2
+      - name: install linting libs
+        run: |
+          cd function
+          pip install flake8
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # check for errors
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          # check all without failing for warnings
   build:
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - name: checks out code
         uses: actions/checkout/@v2
@@ -26,8 +44,41 @@ jobs:
           cd function
           zip -r ../${{ github.sha }}.zip .
       - name: archive artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v2      # publishes to actions run, i.e. https://github.com/linuxlsr/content-github-actions-deep-dive-lesson/actions/runs/1671717237
         with:
           name: zipped-bundle
           path: ${{ github.sha }}.zip
 
+  upload:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: zipped-bundle   # referenced in upload-artifact step, same name, so can pull it without ref actual file name
+      - name: Config creds
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - name: upload to s3
+        run: aws s3 cp ${{ github.sha }}.zip s3://${{ secrets.S3_BUCKET }}/${{ github.sha }}.zip
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: upload
+    steps:
+      - name: Config creds
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - name: update function code
+        run: | aws lambda update-function-code \
+          --function-name my-function \
+          --s3-bucket ${{ secrets.S3_BUCKET }} \
+          --s3-key ${{ github.sha }}.zip \
+          --publish
